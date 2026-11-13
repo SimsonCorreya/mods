@@ -1,0 +1,14 @@
+{
+  "name": "mods",
+  "description": "Claude Code mods by Simson Correya. Each one installs on its own.",
+  "owner": { "name": "Simson Correya" },
+  "plugins": [
+    {
+      "name": "mk2-hud",
+      "source": "./mk2-hud",
+      "description": "A heads-up display above the Claude Code prompt: reads replies aloud with a local voice, tracks the plan and its subagents, and shows turn, speed, cost, prompt cache and context.",
+      "version": "1.0.0",
+      "category": "productivity"
+    }
+  ]
+}

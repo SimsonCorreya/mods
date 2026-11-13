@@ -27,16 +27,16 @@ The helmet sits beside three rows. Its mouth moves with the voice.
 You need [uv](https://docs.astral.sh/uv/getting-started/installation/), which sets up the voice engine the first time it is used. Then, at the prompt of a terminal session:
 
 ```
-/plugin install mk2-hud --marketplace SimsonCorreya/mk2-hud
+/plugin install mk2-hud --marketplace SimsonCorreya/mods
 ```
 
 Answer `y` to add the marketplace, then pick a scope. From a shell:
 
 ```bash
-claude plugin install mk2-hud --marketplace SimsonCorreya/mk2-hud
+claude plugin install mk2-hud --marketplace SimsonCorreya/mods
 ```
 
-In the desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `SimsonCorreya/mk2-hud`, then **Add plugin**.
+In the desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `SimsonCorreya/mods`, then **Add plugin**.
 
 ### Add a voice
 
