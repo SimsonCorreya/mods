@@ -26,7 +26,7 @@ import {
   stop,
   togglePause,
 } from './voice'
-import { MAX_PINGS, pressShield, toggleLimits, toggleWarm, triggerPoint } from './warm'
+import { MAX_PINGS, pressShield, setShieldNote, toggleLimits, toggleWarm, triggerPoint } from './warm'
 
 const agents = atom({ plugin: 'mk2-hud', key: 'agents' } as const, [])
 const cache = atom({ plugin: 'mk2-hud', key: 'cache' } as const, CACHE)
@@ -53,6 +53,13 @@ const AGENTS_BUTTON = 96
 const MENU_BUTTONS = 100
 const TRANSPORT = 190
 const PLAY_BUTTON = 60
+// The voice row's drawing at most this wide while the shield's draft field
+// shares the row: room for its standby line, the rest for the field.
+const VOICE_BESIDE_NOTE = 470
+
+// What is typed in the band's draft field and not saved yet; null when it
+// shows what is saved. Kept here, so a redraw does not undo the typing.
+let typedNote: string | null = null
 
 // The last width the band was drawn at, for `/mk2-hud width` while tuning.
 let lastWidth = { columns: 0, inner: 0 }
@@ -192,7 +199,7 @@ export function registerBand(on: On): void {
 
     // Desktop, VS Code and the phone.
     const table = $.ui.resolve(e)
-    const { Box, Button, Svg, Text } = table
+    const { Box, Button, Input, Svg, Text } = table
     const Select = 'Select' in table ? table.Select : undefined
     const { mood, lip } = helmetOf(then, e.props.isWorking)
     // The clock the working animations keep their place by, across redraws.
@@ -279,15 +286,50 @@ export function registerBand(on: On): void {
       </Box>
     )
 
-    const voiceW = inner - (then.status === 'idle' ? PLAY_BUTTON : TRANSPORT) - (isStatsRow ? 0 : MENU_BUTTONS)
+    // The shield's draft, beside the standby line: shown while the shield is on
+    // and nothing is being read, so it never covers a sentence.
+    const isNoteShown = shield.status !== 'off' && then.status === 'idle'
+    const noteText = typedNote ?? shield.note
+    const saveNote = async (text: string) => {
+      typedNote = null
+      await setShieldNote($, text)
+      $.ui.toast(text.trim() === '' ? '🛡️ Draft cleared.' : '🛡️ Saved: it goes out with "continue" after the reset.', { timeoutMs: 5000 })
+    }
+    const voiceW = Math.min(
+      inner - (then.status === 'idle' ? PLAY_BUTTON : TRANSPORT) - (isStatsRow ? 0 : MENU_BUTTONS),
+      isNoteShown ? VOICE_BESIDE_NOTE : Infinity,
+    )
+    const voiceArt = (
+      <Svg
+        source={voiceSvg({ player: then, speed: chosen.speed, isAuto: chosen.isAuto, mode: chosen.mode, hasVoices: voiceNames.length > 0 }, voiceW)}
+        alt={isReading ? `Sentence ${position}: ${then.sentence}` : 'Voice on standby'}
+      />
+    )
     const voiceRow = (
       <Box key="voice" flexDirection="row" alignItems="center" columnGap="sm">
-        {fit(
-          'voice-art',
-          <Svg
-            source={voiceSvg({ player: then, speed: chosen.speed, isAuto: chosen.isAuto, mode: chosen.mode, hasVoices: voiceNames.length > 0 }, voiceW)}
-            alt={isReading ? `Sentence ${position}: ${then.sentence}` : 'Voice on standby'}
-          />,
+        {isNoteShown ? (
+          <Box key="voice-art" flexShrink={1} minWidth={0}>
+            {voiceArt}
+          </Box>
+        ) : (
+          fit('voice-art', voiceArt)
+        )}
+        {isNoteShown && (
+          <Box key="note" flexDirection="row" alignItems="center" columnGap="xs" flexGrow={1} flexShrink={1} minWidth={0}>
+            <Box key="note-field" flexGrow={1} flexShrink={1} minWidth={0}>
+              <Input
+                key="shield-note"
+                placeholder='🛡️ A message to send with "continue" after the reset'
+                value={noteText}
+                submitLabel="save"
+                onInput={value => {
+                  typedNote = value
+                }}
+                onSubmit={value => void saveNote(value)}
+              />
+            </Box>
+            <Button key="shield-note-save" label="Save" onPress={() => saveNote(typedNote ?? shield.note)} />
+          </Box>
         )}
         <Box key="transport" flexDirection="row" alignItems="center" columnGap="xs" flexShrink={0}>
           {/* The desktop draws a Button's label: the glyph itself. */}
