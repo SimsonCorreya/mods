@@ -175,6 +175,11 @@ export type Hold = {
   fallbackAt: number
   /** Pings sent in this hold. */
   pings: number
+  /**
+   * When the session window a pause began in resets, in epoch milliseconds;
+   * null when not pausing or unknown. Once it has passed, the pause is over.
+   */
+  pauseEndsAt: number | null
 }
 
 export type Cache = {
