@@ -144,11 +144,11 @@ test('with the shield on, the voice row holds a draft for "continue" and saves i
   await ui.press({ key: 'shield' })
   expect(await ui.find({ key: 'shield-note' })).toBeDefined()
 
-  // Typed, it is not saved until Save; then the field shows what was saved.
+  // Typed, it is not saved until Save (the field's own button, as Enter); then it shows what was saved.
   await ui.input({ key: 'shield-note', text: 'then run the tests', kind: 'change' })
-  await ui.press({ key: 'shield-note-save' })
+  await ui.input({ key: 'shield-note', text: 'then run the tests', kind: 'submit' })
   expect((await ui.find({ key: 'shield-note' }))?.props.value).toBe('then run the tests')
-  // Enter saves too.
+  // A new draft replaces it.
   await ui.input({ key: 'shield-note', text: 'and commit', kind: 'submit' })
   expect((await ui.find({ key: 'shield-note' }))?.props.value).toBe('and commit')
   await ui.unmount()

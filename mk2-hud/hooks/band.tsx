@@ -321,16 +321,14 @@ export function registerBand(on: On): void {
                 key="shield-note"
                 placeholder='🛡️ A message to send with "continue" after the reset'
                 value={noteText}
-                // The desktop draws this beside the field: Enter's mark, as
-                // the Save button beside it is the one that says save.
-                submitLabel="↵"
+                // The desktop draws this beside the field as its button: it saves, as Enter does.
+                submitLabel="Save"
                 onInput={value => {
                   typedNote = value
                 }}
                 onSubmit={value => void saveNote(value)}
               />
             </Box>
-            <Button key="shield-note-save" label="Save" onPress={() => saveNote(typedNote ?? shield.note)} />
           </Box>
         )}
         <Box key="transport" flexDirection="row" alignItems="center" columnGap="xs" flexShrink={0}>
