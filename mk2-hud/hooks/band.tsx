@@ -53,6 +53,10 @@ const AGENTS_BUTTON = 96
 const MENU_BUTTONS = 100
 const TRANSPORT = 190
 const PLAY_BUTTON = 60
+// The shield's draft field and its Save button: the desktop draws the field at
+// a fixed width, about twenty characters, so this is all the room it takes.
+const NOTE_FIELD = 320
+
 // What is typed in the band's draft field and not saved yet; null when it
 // shows what is saved. Kept here, so a redraw does not undo the typing.
 let typedNote: string | null = null
@@ -282,16 +286,16 @@ export function registerBand(on: On): void {
       </Box>
     )
 
-    // The shield's draft, on a line of its own under the voice row: shown while
-    // the shield is on and nothing is being read, so it never covers a sentence.
+    // The shield's draft, beside the standby line: shown while the shield is on
+    // and nothing is being read, so it never covers a sentence.
     const isNoteShown = shield.status !== 'off' && then.status === 'idle'
     const saveNote = async (text: string) => {
       typedNote = null
       await setShieldNote($, text)
       $.ui.toast(text.trim() === '' ? '🛡️ Draft cleared.' : '🛡️ Saved: it goes out with "continue" after the reset.', { timeoutMs: 5000 })
     }
-    const noteRow = isNoteShown && (
-      <Box key="note" flexDirection="column" alignItems="stretch" width="100%" minWidth={0}>
+    const noteField = isNoteShown && (
+      <Box key="note" flexDirection="row" alignItems="center" flexShrink={0}>
         <Input
           key="shield-note"
           placeholder='🛡️ A message to send with "continue" after the reset'
@@ -306,7 +310,8 @@ export function registerBand(on: On): void {
       </Box>
     )
 
-    const voiceW = inner - (then.status === 'idle' ? PLAY_BUTTON : TRANSPORT) - (isStatsRow ? 0 : MENU_BUTTONS)
+    const voiceW =
+      inner - (then.status === 'idle' ? PLAY_BUTTON : TRANSPORT) - (isStatsRow ? 0 : MENU_BUTTONS) - (isNoteShown ? NOTE_FIELD : 0)
     const voiceRow = (
       <Box key="voice" flexDirection="row" alignItems="center" columnGap="sm">
         {fit(
@@ -316,6 +321,7 @@ export function registerBand(on: On): void {
             alt={isReading ? `Sentence ${position}: ${then.sentence}` : 'Voice on standby'}
           />,
         )}
+        {noteField}
         <Box key="transport" flexDirection="row" alignItems="center" columnGap="xs" flexShrink={0}>
           {/* The desktop draws a Button's label: the glyph itself. */}
           {isReading && <Button key="back" plain label="⏮" onPress={() => skip($, -1)} />}
@@ -460,7 +466,6 @@ export function registerBand(on: On): void {
               {missionRow}
               {statsRow}
               {voiceRow}
-              {noteRow}
             </Box>
           </Box>
           {tray}
