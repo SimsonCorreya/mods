@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { HOLD, STATS, WARM } from '../hooks/state'
-import { WARM_MARK, currentLimits, isPauseStale, isPingDue, isPingText, pauseFor, triggerPoint } from '../hooks/warm'
+import { WARM_MARK, currentLimits, isPauseStale, isPingDue, isPingText, pauseFor, resumeText, triggerPoint } from '../hooks/warm'
 
 const LIMITS = { limit: 50, weekLimit: 40, limitResetsAt: 1_000, weekResetsAt: 9_000 }
 
@@ -85,3 +85,9 @@ for (const [when, now, isBlocked] of [
     else expect(text).not.toContain('shield')
   })
 }
+
+test('"continue" carries the drafted message, when there is one', async () => {
+  expect(resumeText('')).toBe('continue')
+  expect(resumeText('  \n ')).toBe('continue')
+  expect(resumeText(' Then run the tests. ')).toBe('continue\n\nThen run the tests.')
+})

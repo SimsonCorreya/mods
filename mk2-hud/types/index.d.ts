@@ -180,6 +180,8 @@ export type Hold = {
    * null when not pausing or unknown. Once it has passed, the pause is over.
    */
   pauseEndsAt: number | null
+  /** A message the person drafted to go out with "continue" after the reset; '' for none. */
+  note: string
 }
 
 export type Cache = {

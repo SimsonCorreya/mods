@@ -53,8 +53,12 @@ const MIN_PING_PERCENT = 0.1
 
 // The marker that tells a ping's turn from the person's.
 export const WARM_MARK = '[mk2-hud keep-warm]'
-const PING = `${WARM_MARK} Cache keep-alive. Reply with the single word: ok. Use no tools.`
+// Sent as the person's words, so it goes out bare, without the plugin's frame.
+const PING = `${WARM_MARK} Reply "ok". No tools.`
 const RESUME = 'continue'
+
+// What goes out after the reset: "continue", with the person's draft if any.
+export const resumeText = (note: string): string => (note.trim() === '' ? RESUME : `${RESUME}\n\n${note.trim()}`)
 const PAUSE_REASON =
   "Paused by Mk2-HUD's shield: the session limit is nearly reached. Don't start anything new. " +
   'In one or two short sentences, note what is done and what comes next, then end your turn. ' +
@@ -142,7 +146,7 @@ export async function toggleWarm($: EngineInterface): Promise<boolean> {
 async function sendPing($: EngineInterface): Promise<boolean> {
   const { limit } = { ...STATS, ...(await read($, stats)) }
   await update($, warm, w => ({ ...w, isPinging: true, limitAtPing: limit }))
-  const sent = await $.prompt.submit({ text: PING }).catch(() => ({ drop: 'failed' as const }))
+  const sent = await $.prompt.submit({ text: PING, asUser: true }).catch(() => ({ drop: 'failed' as const }))
   if (sent.drop === undefined) return true
   await update($, warm, w => ({ ...w, isPinging: false, limitAtPing: null }))
   return false
@@ -171,6 +175,11 @@ async function warmTick($: EngineInterface, secondsLeft: number | null, isWorkin
 
 export async function setShield($: EngineInterface, isOn: boolean): Promise<void> {
   await update($, hold, h => ({ ...h, status: isOn ? ('armed' as const) : ('off' as const), resumeAt: null, pings: 0, pauseEndsAt: null }))
+}
+
+// The draft that goes out with "continue"; kept until it has been sent.
+export async function setShieldNote($: EngineInterface, note: string): Promise<void> {
+  await update($, hold, h => ({ ...h, note }))
 }
 
 export async function setShieldAt($: EngineInterface, percent: number): Promise<void> {
@@ -234,10 +243,11 @@ async function shieldTick($: EngineInterface, secondsLeft: number | null, isWork
     if (isWorking || w.isPinging) return true
     // Back to armed first, so the turn "continue" starts is the person's own.
     await update($, hold, was => ({ ...was, status: 'armed' as const, resumeAt: null, pings: 0 }))
-    const sent = await $.prompt.submit({ text: RESUME, asUser: true }).catch(() => ({ drop: 'failed' as const }))
+    const sent = await $.prompt.submit({ text: resumeText(h.note), asUser: true }).catch(() => ({ drop: 'failed' as const }))
     if (sent.drop !== undefined) {
       await update($, hold, was => ({ ...was, status: h.status, resumeAt }))
     } else {
+      await update($, hold, was => ({ ...was, note: '' }))
       $.ui.toast('🛡️ Session limit reset: Claude is continuing.', { timeoutMs: 10000 })
     }
     return true

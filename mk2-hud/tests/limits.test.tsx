@@ -51,8 +51,14 @@ for (const surface of ['desktop', 'terminal'] as const) {
     await ui.press({ key: 'warm-off' })
     expect(await ui.find({ key: 'warm-on' })).toBeDefined()
 
+    expect(await ui.find({ key: 'shield-note' })).toBeUndefined()
     await ui.press({ key: 'shield-on' })
     expect(await ui.find({ key: 'shield-off' })).toBeDefined()
+    // Armed, it takes a draft to send with "continue", and can clear it.
+    await ui.input({ key: 'shield-note', text: 'then run the tests', kind: 'change' })
+    expect(await drawn()).toContain('goes out with')
+    await ui.press({ key: 'shield-note-clear' })
+    expect(await ui.find({ key: 'shield-note-clear' })).toBeUndefined()
     await ui.press({ key: 'shield-at-up' })
     expect(await drawn()).toContain('90%')
     await ui.press({ key: 'shield-off' })
