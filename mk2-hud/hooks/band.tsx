@@ -315,13 +315,15 @@ export function registerBand(on: On): void {
           fit('voice-art', voiceArt)
         )}
         {isNoteShown && (
-          <Box key="note" flexDirection="row" alignItems="center" columnGap="xs" flexGrow={1} flexShrink={1} minWidth={0}>
-            <Box key="note-field" flexGrow={1} flexShrink={1} minWidth={0}>
+          <Box key="note" flexDirection="row" alignItems="center" justifyContent="flex-start" columnGap="xs" flexGrow={1} flexShrink={1} minWidth={0}>
+            <Box key="note-field" flexDirection="column" alignItems="stretch" justifyContent="flex-start" width="100%" flexGrow={1} flexShrink={1} minWidth={0}>
               <Input
                 key="shield-note"
                 placeholder='🛡️ A message to send with "continue" after the reset'
                 value={noteText}
-                submitLabel="save"
+                // The desktop draws this beside the field: Enter's mark, as
+                // the Save button beside it is the one that says save.
+                submitLabel="↵"
                 onInput={value => {
                   typedNote = value
                 }}
