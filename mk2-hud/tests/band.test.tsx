@@ -136,7 +136,7 @@ test('the session limit shows with its reset time, and drops before cost on a na
   expect(statsCells({ ...s, limit: null }, 600, 'ok', false).some(c => c.key === 'limit')).toBe(false)
 })
 
-test('with the shield on, the voice row holds a draft for "continue" and saves it', async ($, on) => {
+test('with the shield on, a line under the voice row holds a draft for "continue" and saves it', async ($, on) => {
   await startSession($, on, 'desktop')
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   // Shield off: no field.

@@ -53,10 +53,6 @@ const AGENTS_BUTTON = 96
 const MENU_BUTTONS = 100
 const TRANSPORT = 190
 const PLAY_BUTTON = 60
-// The voice row's drawing at most this wide while the shield's draft field
-// shares the row: room for its standby line, the rest for the field.
-const VOICE_BESIDE_NOTE = 470
-
 // What is typed in the band's draft field and not saved yet; null when it
 // shows what is saved. Kept here, so a redraw does not undo the typing.
 let typedNote: string | null = null
@@ -286,50 +282,39 @@ export function registerBand(on: On): void {
       </Box>
     )
 
-    // The shield's draft, beside the standby line: shown while the shield is on
-    // and nothing is being read, so it never covers a sentence.
+    // The shield's draft, on a line of its own under the voice row: shown while
+    // the shield is on and nothing is being read, so it never covers a sentence.
     const isNoteShown = shield.status !== 'off' && then.status === 'idle'
-    const noteText = typedNote ?? shield.note
     const saveNote = async (text: string) => {
       typedNote = null
       await setShieldNote($, text)
       $.ui.toast(text.trim() === '' ? '🛡️ Draft cleared.' : '🛡️ Saved: it goes out with "continue" after the reset.', { timeoutMs: 5000 })
     }
-    const voiceW = Math.min(
-      inner - (then.status === 'idle' ? PLAY_BUTTON : TRANSPORT) - (isStatsRow ? 0 : MENU_BUTTONS),
-      isNoteShown ? VOICE_BESIDE_NOTE : Infinity,
+    const noteRow = isNoteShown && (
+      <Box key="note" flexDirection="column" alignItems="stretch" width="100%" minWidth={0}>
+        <Input
+          key="shield-note"
+          placeholder='🛡️ A message to send with "continue" after the reset'
+          value={typedNote ?? shield.note}
+          // The desktop draws this beside the field as its button: it saves, as Enter does.
+          submitLabel="Save"
+          onInput={value => {
+            typedNote = value
+          }}
+          onSubmit={value => void saveNote(value)}
+        />
+      </Box>
     )
-    const voiceArt = (
-      <Svg
-        source={voiceSvg({ player: then, speed: chosen.speed, isAuto: chosen.isAuto, mode: chosen.mode, hasVoices: voiceNames.length > 0 }, voiceW)}
-        alt={isReading ? `Sentence ${position}: ${then.sentence}` : 'Voice on standby'}
-      />
-    )
+
+    const voiceW = inner - (then.status === 'idle' ? PLAY_BUTTON : TRANSPORT) - (isStatsRow ? 0 : MENU_BUTTONS)
     const voiceRow = (
       <Box key="voice" flexDirection="row" alignItems="center" columnGap="sm">
-        {isNoteShown ? (
-          <Box key="voice-art" flexShrink={1} minWidth={0}>
-            {voiceArt}
-          </Box>
-        ) : (
-          fit('voice-art', voiceArt)
-        )}
-        {isNoteShown && (
-          <Box key="note" flexDirection="row" alignItems="center" justifyContent="flex-start" columnGap="xs" flexGrow={1} flexShrink={1} minWidth={0}>
-            <Box key="note-field" flexDirection="column" alignItems="stretch" justifyContent="flex-start" width="100%" flexGrow={1} flexShrink={1} minWidth={0}>
-              <Input
-                key="shield-note"
-                placeholder='🛡️ A message to send with "continue" after the reset'
-                value={noteText}
-                // The desktop draws this beside the field as its button: it saves, as Enter does.
-                submitLabel="Save"
-                onInput={value => {
-                  typedNote = value
-                }}
-                onSubmit={value => void saveNote(value)}
-              />
-            </Box>
-          </Box>
+        {fit(
+          'voice-art',
+          <Svg
+            source={voiceSvg({ player: then, speed: chosen.speed, isAuto: chosen.isAuto, mode: chosen.mode, hasVoices: voiceNames.length > 0 }, voiceW)}
+            alt={isReading ? `Sentence ${position}: ${then.sentence}` : 'Voice on standby'}
+          />,
         )}
         <Box key="transport" flexDirection="row" alignItems="center" columnGap="xs" flexShrink={0}>
           {/* The desktop draws a Button's label: the glyph itself. */}
@@ -475,6 +460,7 @@ export function registerBand(on: On): void {
               {missionRow}
               {statsRow}
               {voiceRow}
+              {noteRow}
             </Box>
           </Box>
           {tray}
