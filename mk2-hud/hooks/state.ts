@@ -36,5 +36,5 @@ export const DEFAULTS: HudSettings = {
 export const STATS: Stats = { turn: 0, speed: null, turnCost: null, total: 0, context: 0, costAtStart: 0, limit: null, limitResetsAt: null, weekLimit: null, weekResetsAt: null }
 export const CACHE: Cache = { expiresAt: null, secondsLeft: null }
 export const WARM: Warm = { status: 'off', sent: 0, isPinging: false, pausedUntil: null, lastCost: null, totalCost: 0, pingPercent: null, limitAtPing: null }
-export const HOLD: Hold = { status: 'off', resumeAt: null, fallbackAt: 85, pings: 0 }
+export const HOLD: Hold = { status: 'off', resumeAt: null, fallbackAt: 85, pings: 0, pauseEndsAt: null, note: '' }
 export const PANEL: Panel = { isCompact: false, isDoneCollapsed: false, autoOpenedFor: '' }

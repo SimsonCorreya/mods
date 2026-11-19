@@ -9,7 +9,7 @@ import type { Register } from 'claude-code'
 import { HUD, resetTime, xml } from './hud'
 import { CACHE, HOLD, STATS, WARM } from './state'
 import { cacheLevel } from './telemetry'
-import { LIMITS_PANE, MAX_PINGS, pauseNow, setShield, setShieldAt, setWarm, triggerPoint } from './warm'
+import { LIMITS_PANE, MAX_PINGS, pauseNow, setShield, setShieldAt, setShieldNote, setWarm, triggerPoint } from './warm'
 
 const cache = atom({ plugin: 'mk2-hud', key: 'cache' } as const, CACHE)
 const hold = atom({ plugin: 'mk2-hud', key: 'hold' } as const, HOLD)
@@ -50,7 +50,7 @@ export function gaugeSvg(label: string, value: string, note: string, fill: numbe
 export function registerLimits(on: On): void {
   on('ui.render', { component: 'Pane', requestId: LIMITS_PANE }, async ($, e) => {
     const ui = $.ui.resolve(e)
-    const { Box, Button, Text } = ui
+    const { Box, Button, Input, Text } = ui
     // The terminal resolves Svg to an empty box: it gets the meters as text.
     const Svg = e.surface !== 'terminal' && 'Svg' in ui ? ui.Svg : undefined
     const s = { ...STATS, ...(await read($, stats)) }
@@ -215,6 +215,26 @@ export function registerLimits(on: On): void {
             'For a task that won\'t finish in time: pauses it before the session limit runs out, pings to keep the cache warm while waiting, then sends "continue" once the limit resets. Armed, it pauses by itself where what is left just covers the wait (the fixed point until a ping has been measured).',
           )}
           {status('shield-now-text', shieldNow)}
+          {shield.status !== 'off' && (
+            <Box key="shield-note-box" flexDirection="column" rowGap="xs">
+              <Input
+                key="shield-note"
+                label="With “continue”"
+                placeholder="Optional: a message to send with it after the reset"
+                value={shield.note}
+                rows={2}
+                submitLabel="save"
+                onInput={value => void setShieldNote($, value)}
+                onSubmit={value => void setShieldNote($, value)}
+              />
+              {shield.note.trim() !== '' && (
+                <Box key="shield-note-row" flexDirection="row" alignItems="center" columnGap="sm">
+                  {about('shield-note-saved', 'Saved: it goes out with "continue", once.')}
+                  <Button key="shield-note-clear" plain label="Clear" onPress={() => setShieldNote($, '')} />
+                </Box>
+              )}
+            </Box>
+          )}
         </Box>
 
         {note('usage-other', 'OTHER MK2-HUD FEATURES THAT USE TOKENS', HUD.muted, [

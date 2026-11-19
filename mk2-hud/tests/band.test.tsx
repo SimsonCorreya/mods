@@ -135,3 +135,21 @@ test('the session limit shows with its reset time, and drops before cost on a na
   expect(statsSvg(cells, 400)).not.toContain('SESSION LIMIT')
   expect(statsCells({ ...s, limit: null }, 600, 'ok', false).some(c => c.key === 'limit')).toBe(false)
 })
+
+test('with the shield on, the voice row holds a draft for "continue" and saves it', async ($, on) => {
+  await startSession($, on, 'desktop')
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  // Shield off: no field.
+  expect(await ui.find({ key: 'shield-note' })).toBeUndefined()
+  await ui.press({ key: 'shield' })
+  expect(await ui.find({ key: 'shield-note' })).toBeDefined()
+
+  // Typed, it is not saved until Save (the field's own button, as Enter); then it shows what was saved.
+  await ui.input({ key: 'shield-note', text: 'then run the tests', kind: 'change' })
+  await ui.input({ key: 'shield-note', text: 'then run the tests', kind: 'submit' })
+  expect((await ui.find({ key: 'shield-note' }))?.props.value).toBe('then run the tests')
+  // A new draft replaces it.
+  await ui.input({ key: 'shield-note', text: 'and commit', kind: 'submit' })
+  expect((await ui.find({ key: 'shield-note' }))?.props.value).toBe('and commit')
+  await ui.unmount()
+})

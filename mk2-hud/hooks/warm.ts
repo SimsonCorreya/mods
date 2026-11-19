@@ -53,8 +53,12 @@ const MIN_PING_PERCENT = 0.1
 
 // The marker that tells a ping's turn from the person's.
 export const WARM_MARK = '[mk2-hud keep-warm]'
-const PING = `${WARM_MARK} Cache keep-alive. Reply with the single word: ok. Use no tools.`
+// Sent as the person's words, so it goes out bare, without the plugin's frame.
+const PING = `${WARM_MARK} Reply "ok". No tools.`
 const RESUME = 'continue'
+
+// What goes out after the reset: "continue", with the person's draft if any.
+export const resumeText = (note: string): string => (note.trim() === '' ? RESUME : `${RESUME}\n\n${note.trim()}`)
 const PAUSE_REASON =
   "Paused by Mk2-HUD's shield: the session limit is nearly reached. Don't start anything new. " +
   'In one or two short sentences, note what is done and what comes next, then end your turn. ' +
@@ -81,6 +85,19 @@ async function showLimits($: EngineInterface): Promise<void> {
 }
 
 export type WarmLimits = Pick<Stats, 'limit' | 'weekLimit' | 'limitResetsAt' | 'weekResetsAt'>
+
+// The limits as they stand now. A reading is kept until the next answer, so
+// once its window has reset it still shows the old, nearly full figure: that
+// figure no longer counts, and is read as no reading until a new one arrives.
+export const currentLimits = <S extends WarmLimits>(s: S, now: number): S => ({
+  ...s,
+  limit: s.limitResetsAt !== null && now >= s.limitResetsAt ? null : s.limit,
+  weekLimit: s.weekResetsAt !== null && now >= s.weekResetsAt ? null : s.weekLimit,
+})
+
+// Whether a pause belongs to a session window that has since reset.
+export const isPauseStale = (h: Pick<Hold, 'status' | 'pauseEndsAt'>, now: number): boolean =>
+  h.status === 'pausing' && h.pauseEndsAt !== null && now >= h.pauseEndsAt
 
 // Whether keep-warm's limits call for a pause, and until when (null: unknown).
 export const pauseFor = (s: WarmLimits): { isDue: boolean; until: number | null } =>
@@ -129,7 +146,7 @@ export async function toggleWarm($: EngineInterface): Promise<boolean> {
 async function sendPing($: EngineInterface): Promise<boolean> {
   const { limit } = { ...STATS, ...(await read($, stats)) }
   await update($, warm, w => ({ ...w, isPinging: true, limitAtPing: limit }))
-  const sent = await $.prompt.submit({ text: PING }).catch(() => ({ drop: 'failed' as const }))
+  const sent = await $.prompt.submit({ text: PING, asUser: true }).catch(() => ({ drop: 'failed' as const }))
   if (sent.drop === undefined) return true
   await update($, warm, w => ({ ...w, isPinging: false, limitAtPing: null }))
   return false
@@ -139,7 +156,7 @@ async function warmTick($: EngineInterface, secondsLeft: number | null, isWorkin
   const w = { ...WARM, ...(await read($, warm)) }
   if (w.status !== 'on') return
 
-  const pause = pauseFor({ ...STATS, ...(await read($, stats)) })
+  const pause = pauseFor(currentLimits({ ...STATS, ...(await read($, stats)) }, await $.clock.now()))
   if (pause.isDue) {
     await update($, warm, was => ({ ...was, status: 'paused' as const, pausedUntil: pause.until }))
     return
@@ -157,7 +174,12 @@ async function warmTick($: EngineInterface, secondsLeft: number | null, isWorkin
 // --- shield (🛡️) ------------------------------------------------------------
 
 export async function setShield($: EngineInterface, isOn: boolean): Promise<void> {
-  await update($, hold, h => ({ ...h, status: isOn ? ('armed' as const) : ('off' as const), resumeAt: null, pings: 0 }))
+  await update($, hold, h => ({ ...h, status: isOn ? ('armed' as const) : ('off' as const), resumeAt: null, pings: 0, pauseEndsAt: null }))
+}
+
+// The draft that goes out with "continue"; kept until it has been sent.
+export async function setShieldNote($: EngineInterface, note: string): Promise<void> {
+  await update($, hold, h => ({ ...h, note }))
 }
 
 export async function setShieldAt($: EngineInterface, percent: number): Promise<void> {
@@ -169,9 +191,10 @@ export async function setShieldAt($: EngineInterface, percent: number): Promise<
 export async function pauseNow($: EngineInterface): Promise<void> {
   const isWorking = await read($, isBusy)
   const { limitResetsAt } = { ...STATS, ...(await read($, stats)) }
+  const now = await $.clock.now()
   await update($, hold, h =>
     isWorking
-      ? { ...h, status: 'pausing' as const }
+      ? { ...h, status: 'pausing' as const, pauseEndsAt: limitResetsAt !== null && limitResetsAt > now ? limitResetsAt : null }
       : { ...h, status: 'holding' as const, resumeAt: limitResetsAt === null ? null : limitResetsAt + RESUME_SLACK_MS },
   )
   $.ui.toast(
@@ -193,12 +216,18 @@ export async function pressShield($: EngineInterface): Promise<void> {
 
 async function shieldTick($: EngineInterface, secondsLeft: number | null, isWorking: boolean, now: number): Promise<boolean> {
   const h = { ...HOLD, ...(await read($, hold)) }
-  const s = { ...STATS, ...(await read($, stats)) }
+  const s = currentLimits({ ...STATS, ...(await read($, stats)) }, now)
   const w = { ...WARM, ...(await read($, warm)) }
+
+  // A pause from a window that has since reset is over: back to armed.
+  if (isPauseStale(h, now)) {
+    await update($, hold, was => ({ ...was, status: 'armed' as const, pauseEndsAt: null }))
+    return false
+  }
 
   if (h.status === 'armed') {
     if (isWorking && s.limit !== null && s.limit >= triggerPoint(s, w.pingPercent, h.fallbackAt, now)) {
-      await update($, hold, was => ({ ...was, status: 'pausing' as const }))
+      await update($, hold, was => ({ ...was, status: 'pausing' as const, pauseEndsAt: s.limitResetsAt }))
       $.ui.toast(`🛡️ Session limit at ${Math.round(s.limit)}%: pausing at Claude's next step.`, { timeoutMs: 12000 })
       await showLimits($)
     }
@@ -214,10 +243,11 @@ async function shieldTick($: EngineInterface, secondsLeft: number | null, isWork
     if (isWorking || w.isPinging) return true
     // Back to armed first, so the turn "continue" starts is the person's own.
     await update($, hold, was => ({ ...was, status: 'armed' as const, resumeAt: null, pings: 0 }))
-    const sent = await $.prompt.submit({ text: RESUME, asUser: true }).catch(() => ({ drop: 'failed' as const }))
+    const sent = await $.prompt.submit({ text: resumeText(h.note), asUser: true }).catch(() => ({ drop: 'failed' as const }))
     if (sent.drop !== undefined) {
       await update($, hold, was => ({ ...was, status: h.status, resumeAt }))
     } else {
+      await update($, hold, was => ({ ...was, note: '' }))
       $.ui.toast('🛡️ Session limit reset: Claude is continuing.', { timeoutMs: 10000 })
     }
     return true
@@ -254,15 +284,18 @@ export function warmSessionStart($: EngineInterface): void {
 // takes the task back, and the shield returns to armed.
 export async function warmTurnStart($: EngineInterface, e: EventOf['turn.start']): Promise<void> {
   if (e.agentId !== undefined || isPingText(e.text)) return
+  const now = await $.clock.now()
   const isPaused = ({ ...WARM, ...(await read($, warm)) }).status === 'paused'
-  const isEased = !pauseFor({ ...STATS, ...(await read($, stats)) }).isDue
+  const isEased = !pauseFor(currentLimits({ ...STATS, ...(await read($, stats)) }, now)).isDue
   await update($, warm, w => ({
     ...w,
     sent: 0,
     ...(isPaused && isEased ? { status: 'on' as const, pausedUntil: null } : {}),
   }))
   await update($, hold, h =>
-    h.status === 'holding' || h.status === 'waiting' ? { ...h, status: 'armed' as const, resumeAt: null, pings: 0 } : h,
+    h.status === 'holding' || h.status === 'waiting' || isPauseStale(h, now)
+      ? { ...h, status: 'armed' as const, resumeAt: null, pings: 0, pauseEndsAt: null }
+      : h,
   )
 }
 
@@ -289,9 +322,13 @@ export async function warmTurnComplete($: EngineInterface, e: EventOf['turn.comp
   }
 
   const resumeAt = s.limitResetsAt === null ? null : s.limitResetsAt + RESUME_SLACK_MS
-  const { status } = { ...HOLD, ...(await read($, hold)) }
-  if (status === 'pausing') {
-    await update($, hold, h => ({ ...h, status: 'holding' as const, resumeAt, pings: 0 }))
+  const h0 = { ...HOLD, ...(await read($, hold)) }
+  const { status } = h0
+  if (isPauseStale(h0, await $.clock.now())) {
+    // The window reset before the pause took hold: nothing to wait for.
+    await update($, hold, h => ({ ...h, status: 'armed' as const, pauseEndsAt: null }))
+  } else if (status === 'pausing') {
+    await update($, hold, h => ({ ...h, status: 'holding' as const, resumeAt, pings: 0, pauseEndsAt: null }))
   } else if (status === 'armed' && e.reason === 'error' && (s.limit ?? 0) >= 99) {
     await update($, hold, h => ({ ...h, status: 'waiting' as const, resumeAt, pings: 0 }))
   }
@@ -302,7 +339,13 @@ export async function warmTurnComplete($: EngineInterface, e: EventOf['turn.comp
 // the reason instead of run, so Claude stops between steps.
 export function registerWarm(on: On): void {
   on('tool.call', async ($, e, next) => {
-    if (({ ...HOLD, ...(await read($, hold)) }).status !== 'pausing' || OPEN_TOOLS.includes(e.tool)) return next(e)
+    const h = { ...HOLD, ...(await read($, hold)) }
+    if (h.status !== 'pausing' || OPEN_TOOLS.includes(e.tool)) return next(e)
+    // Past the reset the limit is free again: the pause is lifted, not enforced.
+    if (isPauseStale(h, await $.clock.now())) {
+      await update($, hold, was => ({ ...was, status: 'armed' as const, pauseEndsAt: null }))
+      return next(e)
+    }
     return { deny: PAUSE_REASON }
   }).catch(($, e, next) => next(e))
 }
