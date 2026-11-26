@@ -240,7 +240,7 @@ export function registerLimits(on: On): void {
         {note('usage-other', 'OTHER MK2-HUD FEATURES THAT USE TOKENS', HUD.muted, [
           '• Learn new words: unusual words in a reply are sent to Haiku to ask how to say them, a small request that counts toward your usage. Off in ⋯ → Learn new words, or /mk2-hud learn off.',
           '• Summary reading: Haiku condenses the reply before it is read, one small request each time. Read: Full reply in ⋯ uses none.',
-          "• Plan reports: a short note in Claude's instructions asks it to report multi-step work to the mission row, adding a little to each request and a tool call per step. Off in the plugin's settings (Ask Claude to report its plans).",
+          "• Plan reports: a short note in Claude's instructions about the mission row. In the desktop app the row follows Claude's task list by itself and the note only offers the progress tool as an extra; elsewhere it asks Claude to report multi-step work, a tool call per step. Off in the plugin's settings (Ask Claude to report its plans).",
         ])}
         {note('usage-free', '✓ FREE: RUNS ON YOUR COMPUTER ONLY', HUD.cyan, [
           'These use no tokens and never touch your session or weekly limits, only your computer:',
