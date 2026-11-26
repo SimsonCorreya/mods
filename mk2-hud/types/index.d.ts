@@ -81,6 +81,8 @@ export type Flow = {
   source: FlowSource
   /** An `agents` flow counts the runs started from this moment on. */
   startedAt?: number
+  /** A `plan` flow: when the progress tool last reported it, for the same-turn rule. */
+  reportedAt?: number
 }
 
 /** One entry of Claude's own task list, as TodoWrite or TaskCreate/TaskUpdate keep it. */
@@ -201,6 +203,8 @@ declare module 'claude-code' {
       agents: AgentRun[]
       panel: Panel
       now: number
+      /** When the person's latest request started: a plan reported since then is this turn's. */
+      turnAt: number
       stats: Stats
       cache: Cache
       isBusy: boolean

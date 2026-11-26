@@ -80,7 +80,7 @@ No analytics, and no servers of its own.
 
 **Downloaded:** the first time the voice is used, `uv` installs Piper and its Python dependencies.
 
-**Added to Claude:** two tools, `mcp__mk2-hud__progress` and `mcp__mk2-hud__step`, so Claude can report its plan. A short note in the system prompt asks it to do so. Turn this off with the `planReports` setting, and the Mission row will follow only task lists and subagents.
+**Added to Claude:** two tools, `mcp__mk2-hud__progress` and `mcp__mk2-hud__step`, so Claude can report its plan. In the Claude desktop app the Mission row follows the app's own task list by itself, and a plan reported with the progress tool takes over while it runs; elsewhere a short note in the system prompt asks Claude to report its plan. Turn the note off with the `planReports` setting, and the Mission row will follow only task lists and subagents.
 
 Everything is in this repository, so you can read exactly what runs: `hooks/` is the HUD and `scripts/speaker.py` is the voice.
 

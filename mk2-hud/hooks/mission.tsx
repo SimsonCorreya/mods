@@ -14,6 +14,7 @@ const flow = atom({ plugin: 'mk2-hud', key: 'flow' } as const, null)
 const now = atom({ plugin: 'mk2-hud', key: 'now' } as const, 0)
 const panel = atom({ plugin: 'mk2-hud', key: 'panel' } as const, PANEL)
 const taskList = atom({ plugin: 'mk2-hud', key: 'taskList' } as const, [])
+const turnAt = atom({ plugin: 'mk2-hud', key: 'turnAt' } as const, 0)
 
 type On = Parameters<Register>[0]
 type Options = Parameters<Register>[1]
@@ -39,8 +40,94 @@ const PLAN_PROMPT = [
   `The person sees a progress bar (the mission row of their HUD) above the prompt. When a request will take three or more distinct steps, call ${TOOL} once your plan is clear, with \`title\` (a few words), \`total\` and \`tasks\` (\`[{ "title": "..." }]\`, in order). Call it again with \`done\` (steps finished so far) as each step finishes, and once with \`finished: true\` when the work is done. Skip it for questions and for work of one or two steps. Do not mention the progress bar in replies.`,
 ].join('\n')
 
+// With the desktop app's task list the bar follows that list by itself, so
+// the note only offers the progress tool as an extra.
+const APP_PLAN_PROMPT = [
+  '# Progress bar',
+  `The person sees a progress bar (the mission row of their HUD) above the prompt. It follows the app's task list (mcp__ccd_turn__update_plan) by itself, so keep that list as usual. ${TOOL} is optional: call it only to give the bar a custom title or extra detail (phases, subagent tiers); while a plan reported with it is under way, the bar shows that plan instead of the task list. Do not mention the progress bar in replies.`,
+].join('\n')
+
 // Claude's own task list, in whichever form this build offers it.
 const TASK_TOOLS = ['TodoWrite', 'TaskCreate', 'TaskUpdate']
+
+// The desktop app's task list and the call that closes each turn.
+export const PLAN_TOOL = 'mcp__ccd_turn__update_plan'
+export const WRAP_TOOL = 'mcp__ccd_turn__wrap_up'
+
+export type PlanUpdate = {
+  items?: { content?: string; status?: string }[]
+  advance?: boolean
+  done?: number[]
+  start?: number
+  scope?: string
+}
+
+const STATUSES: readonly TaskItem['status'][] = ['pending', 'in_progress', 'completed']
+
+// The app's task list after one update_plan call: a whole list replaces it;
+// `advance` completes the step in progress and starts the next pending one;
+// `done` and `start` (1-based) mark those steps.
+export const applyPlan = (items: readonly TaskItem[], input: PlanUpdate): TaskItem[] => {
+  if (Array.isArray(input.items)) {
+    return input.items
+      .filter(t => typeof t?.content === 'string' && t.content.trim())
+      .map((t, i) => ({
+        id: String(i + 1),
+        subject: (t.content ?? '').trim(),
+        status: STATUSES.includes(t.status as TaskItem['status']) ? (t.status as TaskItem['status']) : 'pending',
+      }))
+  }
+  const next = items.map(t => ({ ...t }))
+  const set = (n: number, status: TaskItem['status']) => {
+    const t = Number.isInteger(n) ? next[n - 1] : undefined
+    if (t) t.status = status
+  }
+  if (input.advance === true) {
+    const current = next.findIndex(t => t.status === 'in_progress')
+    if (current >= 0) set(current + 1, 'completed')
+    const after = next.findIndex((t, i) => i > current && t.status === 'pending')
+    const upcoming = after >= 0 ? after : next.findIndex(t => t.status === 'pending')
+    if (upcoming >= 0) set(upcoming + 1, 'in_progress')
+  }
+  for (const n of Array.isArray(input.done) ? input.done : []) set(n, 'completed')
+  if (typeof input.start === 'number') set(input.start, 'in_progress')
+  return next
+}
+
+// The app answers each update with where the list stands ("step 3 of 4 is in
+// progress"). When the mod missed the whole list (it loaded mid-task), that
+// answer alone still gives the bar its count, with numbered steps.
+export const listFromAnswer = (answer: unknown): TaskItem[] => {
+  const text = typeof answer === 'string' ? answer : JSON.stringify(answer ?? '')
+  const m = /step (\d+) of (\d+)/i.exec(text)
+  const n = Number(m?.[1])
+  const total = Number(m?.[2])
+  if (!m || !(total > 0) || !(n > 0) || n > total) return []
+  return Array.from({ length: total }, (_, i) => ({
+    id: String(i + 1),
+    subject: `Step ${i + 1}`,
+    status: i + 1 < n ? ('completed' as const) : i + 1 === n ? ('in_progress' as const) : ('pending' as const),
+  }))
+}
+
+// A plan the progress tool reported keeps the bar while it is under way, and
+// for the rest of the turn it was reported in, so two counts never compete.
+export const isPlanHeld = (f: Flow | null, since: number): boolean =>
+  !!f && sourceOf(f) === 'plan' && (!f.isFinished || (f.reportedAt ?? -1) >= since)
+
+// What the bar shows once the task list changed: `isReset` (a new task) drops
+// an older plan, never one reported in this turn.
+export const barFor = (prev: Flow | null, items: readonly TaskItem[], since: number, isReset = false): Flow | null => {
+  if (prev && isPlanHeld(prev, since) && !(isReset && (prev.reportedAt ?? -1) < since)) return prev
+  if (isReset) return tasksFlow(items)
+  return tasksFlow(items) ?? (prev && sourceOf(prev) === 'tasks' ? null : prev)
+}
+
+// wrap_up ends the turn's work: the bar fills, unless the turn waits on the person.
+export const wrappedBar = (f: Flow | null, isBlocked: boolean): Flow | null => {
+  if (!f || f.isFinished || isBlocked || sourceOf(f) === 'agents') return f
+  return { ...f, done: f.total, phase: 'close', isFinished: true }
+}
 
 // The panel's words.
 const STRINGS = {
@@ -572,12 +659,10 @@ async function autoOpen($: EngineInterface, key: string): Promise<void> {
 }
 
 // Claude's task list drives the bar unless a reported plan is under way.
-async function showTasks($: EngineInterface): Promise<void> {
+async function showTasks($: EngineInterface, isReset = false): Promise<void> {
   const items = await read($, taskList)
-  await update($, flow, prev => {
-    if (prev && !prev.isFinished && sourceOf(prev) === 'plan') return prev
-    return tasksFlow(items) ?? (prev && sourceOf(prev) === 'tasks' ? null : prev)
-  })
+  const since = await read($, turnAt)
+  await update($, flow, prev => barFor(prev, items, since, isReset))
 }
 
 // A subagent's own task list fills its row in the agents panel.
@@ -741,14 +826,17 @@ export function registerMission(on: On, options: Options): void {
     const composed = await next(e)
     const hasTaskList = e.tools.some(t => TASK_TOOLS.includes(t))
     if (options.planReports === false || hasTaskList || !e.tools.includes(TOOL)) return composed
+    const text = e.tools.includes(PLAN_TOOL) ? APP_PLAN_PROMPT : PLAN_PROMPT
     return {
-      sections: [...composed.sections, { id: 'mk2-hud:plans', text: PLAN_PROMPT, scope: 'session' as const }],
+      sections: [...composed.sections, { id: 'mk2-hud:plans', text, scope: 'session' as const }],
     }
   })
 
   // A finished bar steps aside when the next request starts.
   on('prompt.submit', async ($, e, next) => {
     if (isPingText(e.text)) return next(e)
+    const at = await $.clock.now()
+    await update($, turnAt, () => at)
     const f = await read($, flow)
     if (f && viewOf(f, await read($, agents)).isFinished) {
       await update($, flow, () => null)
@@ -765,7 +853,8 @@ export function registerMission(on: On, options: Options): void {
       // A new flow starts with a clean list; agents still running stay.
       await update($, agents, list => list.filter(a => a.status === 'running'))
     }
-    const next = await update($, flow, p => merge(p, input))
+    const at = await $.clock.now()
+    const next = await update($, flow, p => ({ ...merge(p, input), reportedAt: at }))
     // Only a savvy-flow plan (one naming worker tiers) opens the agents panel by itself.
     if (next && next.tasks.some(t => t.tier in TIER_MODEL)) await autoOpen($, next.title)
     return { result: `ok: ${label(next ?? blank())}` }
@@ -825,6 +914,32 @@ export function registerMission(on: On, options: Options): void {
       return agentId ? items : [...items, { id: taskId, subject: subject ?? `#${taskId}`, activeForm, status: status ?? 'pending' }]
     })
     await showTasks($)
+    return answer
+  }).catch(($, e, next) => next(e))
+
+  // The desktop app's task list: the bar follows it unless a reported plan holds it.
+  on('tool.call', { tool: PLAN_TOOL }, async ($, e, next) => {
+    const answer = await next(e)
+    if (e.agentId || answer.isError) return answer
+    const input = e as unknown as PlanUpdate
+    const isReset = Array.isArray(input.items) && input.scope === 'new_task'
+    await update($, taskList, items => {
+      const applied = applyPlan(items, input)
+      if (Array.isArray(input.items)) return applied
+      // An update to a list the mod never saw: rebuild it from the app's answer.
+      const fallback = listFromAnswer(answer.result)
+      return applied.length === 0 || (fallback.length > 0 && fallback.length !== applied.length) ? fallback : applied
+    })
+    await showTasks($, isReset)
+    return answer
+  }).catch(($, e, next) => next(e))
+
+  on('tool.call', { tool: WRAP_TOOL }, async ($, e, next) => {
+    const answer = await next(e)
+    if (e.agentId || answer.isError) return answer
+    const isBlocked = (e as unknown as { blocked?: boolean }).blocked === true
+    if (!isBlocked) await update($, taskList, items => items.map(t => ({ ...t, status: 'completed' as const })))
+    await update($, flow, f => wrappedBar(f, isBlocked))
     return answer
   }).catch(($, e, next) => next(e))
 
